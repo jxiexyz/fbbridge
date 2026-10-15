@@ -1,0 +1,12 @@
+fb_config.json
+.env
+muse_uploads/
+*.mp4
+*.mov
+*.mkv
+*.webm
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.DS_Store
