@@ -1,5 +1,8 @@
 {
   "page_id": "1423146027540788",
   "page_name": "Your Facebook Page Name",
-  "page_token": "YOUR_PERMANENT_PAGE_ACCESS_TOKEN"
+  "page_token": "YOUR_PERMANENT_PAGE_ACCESS_TOKEN",
+  "telegram_bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
+  "telegram_chat_id": "-100XXXXXXXXXX",
+  "telegram_thread_id": 1234
 }

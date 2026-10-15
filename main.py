@@ -12,7 +12,6 @@ logger = logging.getLogger("fbbridge")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.getenv("FB_CONFIG_PATH", os.path.join(BASE_DIR, "fb_config.json"))
 if not os.path.exists(CONFIG_PATH):
-    # Fallback to home config
     home_cfg = os.path.expanduser("~/fb_config.json")
     if os.path.exists(home_cfg):
         CONFIG_PATH = home_cfg
@@ -29,19 +28,53 @@ def load_fb_config():
     return {
         "page_id": os.getenv("FB_PAGE_ID", ""),
         "page_token": os.getenv("FB_PAGE_TOKEN", ""),
-        "page_name": os.getenv("FB_PAGE_NAME", "Default Page")
+        "page_name": os.getenv("FB_PAGE_NAME", "Default Page"),
+        "telegram_bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
+        "telegram_chat_id": os.getenv("TELEGRAM_CHAT_ID", ""),
+        "telegram_thread_id": os.getenv("TELEGRAM_THREAD_ID", "")
     }
+
+def send_telegram_notification(text: str):
+    config = load_fb_config()
+    bot_token = config.get("telegram_bot_token")
+    chat_id = config.get("telegram_chat_id")
+    thread_id = config.get("telegram_thread_id")
+
+    if not bot_token or not chat_id:
+        return
+
+    try:
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": False
+        }
+        if thread_id:
+            payload["message_thread_id"] = int(thread_id)
+
+        r = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json=payload,
+            timeout=15
+        ).json()
+        logger.info(f"Telegram notification sent: {r.get('ok')}")
+    except Exception as e:
+        logger.error(f"Failed to send Telegram notification: {e}")
 
 def upload_fb_reel_worker(file_path: str, caption: str):
     config = load_fb_config()
     page_id = config.get("page_id")
     token = config.get("page_token")
+    page_name = config.get("page_name", "Wintermute Cozy Style")
 
     if not page_id or not token:
         logger.error("FB config missing page_id or page_token. Cannot upload.")
+        send_telegram_notification(f"<b>❌ Gagal Upload:</b> Konfigurasi Facebook (Page ID / Token) belum diset.")
         return
 
     file_size = os.path.getsize(file_path)
+    size_mb = file_size / (1024 * 1024)
     logger.info(f"Uploading Reel to FB ({page_id}): {file_path} ({file_size} bytes)")
 
     try:
@@ -54,6 +87,7 @@ def upload_fb_reel_worker(file_path: str, caption: str):
 
         if "video_id" not in r1:
             logger.error(f"FB Reels start phase failed: {r1}")
+            send_telegram_notification(f"<b>❌ Gagal Inisiasi Reels:</b> <code>{r1}</code>")
             return
 
         video_id = r1["video_id"]
@@ -74,6 +108,7 @@ def upload_fb_reel_worker(file_path: str, caption: str):
 
         if not r2.get("success"):
             logger.error(f"FB Reels binary transfer failed: {r2}")
+            send_telegram_notification(f"<b>❌ Gagal Transfer Binary Reels:</b> <code>{r2}</code>")
             return
 
         # Phase 3: Publish Reel
@@ -90,8 +125,25 @@ def upload_fb_reel_worker(file_path: str, caption: str):
         ).json()
 
         logger.info(f"FB Reels publish result: {r3}")
+
+        if r3.get("success"):
+            reel_url = f"https://www.facebook.com/reel/{video_id}"
+            report_msg = (
+                f"<b>✅ Video Reels Berhasil Di-publish!</b>\n\n"
+                f"🎬 <b>Halaman:</b> {page_name}\n"
+                f"🆔 <b>Video ID:</b> <code>{video_id}</code>\n"
+                f"🔗 <b>Link:</b> <a href=\"{reel_url}\">{reel_url}</a>\n"
+                f"📦 <b>Ukuran:</b> {size_mb:.2f} MB\n\n"
+                f"📝 <b>Caption:</b>\n"
+                f"<blockquote>{caption}</blockquote>"
+            )
+            send_telegram_notification(report_msg)
+        else:
+            send_telegram_notification(f"<b>❌ Gagal Publish Reels:</b> <code>{r3}</code>")
+
     except Exception as e:
         logger.error(f"Exception during FB Reels upload: {e}")
+        send_telegram_notification(f"<b>❌ Exception saat upload:</b> <code>{str(e)}</code>")
     finally:
         # ponytail: immediate delete after upload attempt to prevent VPS disk saturation
         if os.path.exists(file_path):
